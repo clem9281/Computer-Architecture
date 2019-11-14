@@ -76,6 +76,7 @@ class CPU:
         self.branchtable[LD] = self.handle_LD
         self.branchtable[PRA] = self.handle_PRA
         self.branchtable[JMP] = self.handle_JMP
+        self.branchtable[JNE] = self.handle_JNE
         # debug flag for fun
         self.debug = False
 
@@ -124,7 +125,7 @@ class CPU:
         """ALU operations."""
         # print(reg_a, reg_b)
         if self.debug:
-            x = self.register[reg_b] if reg_b in self.register else "nothing"
+            x = self.register[reg_b] if len(self.register) >= reg_b else "nothing"
             print(
                 f"ALU {op} {self.register[reg_a]} and {x} and storing in register[{reg_a}]"
             )
@@ -327,7 +328,7 @@ class CPU:
     def handle_PRA(self):
         operand_a = self.ram[self.pc + 1]
         if self.debug:
-            print(f"PRA: printing {chr(self.register[operand_a])} from register[{operand_a}]")
+            print(f"PRA: printing ///{chr(self.register[operand_a])}/// from register[{operand_a}]")
         print(f"{chr(self.register[operand_a])}")
         
     def handle_JMP(self):
@@ -336,4 +337,11 @@ class CPU:
         self.pc = self.register[operand_a]
         if self.debug:
             print(f"JMP: jumping to {self.register[operand_a]} from {oldPC}")
-    
+    def handle_JNE(self):
+        oldPC = self.pc
+        if self.flags & 0b00000001 == 0:
+            self.pc = self.register[self.ram[self.pc + 1]]
+        else:
+            self.pc += 2
+        if self.debug:
+            print(f'JNE: Equal flag set to {self.flags & 0b00000001 > 0}, pc moves from {oldPC} to {self.pc}')
