@@ -125,9 +125,11 @@ class CPU:
         """ALU operations."""
         # print(reg_a, reg_b)
         if self.debug:
-            x = self.register[reg_b] if len(self.register) >= reg_b else "nothing"
+            # x and y just clean up our debug output here: reg_b is getting passed in whether we want it or not, so if we aren't using it (like in DEC and INC) don't show it in our debug output
+            x = f"and {self.register[reg_b]}" if len(self.register) >= reg_b else ""
+            y = f"and storing in register[{reg_a}]" if x != "" else ""
             print(
-                f"ALU {op} {self.register[reg_a]} and {x} and storing in register[{reg_a}]"
+                f"ALU {op} {self.register[reg_a]} {x} {y}"
             )
         if op == "CMP":
             a = self.register[reg_a]
