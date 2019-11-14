@@ -62,6 +62,7 @@ class CPU:
         self.ram = [0] * 256
         self.pc = 0
         self.SP = 7
+        self.flags = 0b00000000
         self.register[self.SP] = 0xF4
         self.branchtable = {}
         self.branchtable[HLT] = self.handle_HTL
@@ -70,6 +71,12 @@ class CPU:
         self.branchtable[PUSH] = self.handle_PUSH
         self.branchtable[POP] = self.handle_POP
         self.branchtable[CALL] = self.handle_CALL
+        self.branchtable[RET] = self.handle_RET
+        self.branchtable[JEQ] = self.handle_JEQ
+        self.branchtable[LD] = self.handle_LD
+        self.branchtable[PRA] = self.handle_PRA
+        self.branchtable[JMP] = self.handle_JMP
+        self.branchtable[JNE] = self.handle_JNE
         # debug flag for fun
         self.debug = False
 
@@ -116,13 +123,26 @@ class CPU:
 
     def alu(self, op, reg_a, reg_b):
         """ALU operations."""
+        # print(reg_a, reg_b)
         if self.debug:
+            # x and y just clean up our debug output here: reg_b is getting passed in whether we want it or not, so if we aren't using it (like in DEC and INC) don't show it in our debug output
+            x = f"and {self.register[reg_b]}" if len(self.register) >= reg_b else ""
+            y = f"and storing in register[{reg_a}]" if x != "" else ""
             print(
-                f"ALU {op} {self.register[reg_a]} and {self.register[reg_b]} and storing in register[{reg_a}]"
+                f"ALU {op} {self.register[reg_a]} {x} {y}"
             )
+        if op == "CMP":
+            a = self.register[reg_a]
+            b = self.register[reg_b]
+            if a < b:
+                self.flags = 0b00000100
+            elif a > b:
+                self.flags = 0b00000010
+            else:
+                self.flags = 0b00000001
         # MATH
-        if op == "ADD":
-            self.reg[reg_a] += self.reg[reg_b]
+        elif op == "ADD":
+            self.register[reg_a] += self.register[reg_b]
         elif op == "SUB":
             self.reg[reg_a] -= self.reg[reg_b]
         elif op == "MOD":
@@ -133,7 +153,8 @@ class CPU:
             dividend = self.register[reg_b]
             divisor = self.register[reg_a]
             if dividend == 0:
-                return "Error"
+                print("Error")
+                raise
             self.register[reg_a] = dividend // divisor
         # BITWISE OPS
         elif op == "AND":
@@ -198,7 +219,7 @@ class CPU:
             MOD: "MOD",
             INC: "INC",
             DEC: "DEC",
-            CMP: "DMP",
+            CMP: "CMP",
             AND: "AND",
             NOT: "NOT",
             OR: "OR",
@@ -208,10 +229,21 @@ class CPU:
         }
         while True:
             command = self.ram[self.pc]
-            # is_alu_command = (command >> 5) & 0b001
             is_alu_command = command & 0b00100000
+            is_pc_mutator = (command >> 4) & 0b0001
             instruction_length = command >> 6
-            if is_alu_command > 0:
+            if self.debug:
+                print("------------------------------------")
+                print(
+                    f"RUN: {command}, isALU: {is_alu_command > 0}, isMutator: {is_pc_mutator > 0}"
+                )
+            if is_pc_mutator > 0:
+                if command in self.branchtable:
+                    self.branchtable[command]()
+                else:
+                    print("We haven't implemented that command")
+                    raise
+            elif is_alu_command > 0:
                 operation = self.ram[self.pc]
                 operand_a = self.ram[self.pc + 1]
                 operand_b = self.ram[self.pc + 2]
@@ -227,20 +259,20 @@ class CPU:
     # OP HANDLERS FOR BRANCHTABLE
     def handle_HTL(self):
         if self.debug:
-            print(f"Exiting program at {self.pc}")
+            print(f"HTL: Exiting program at {self.pc}")
         sys.exit()
 
     def handle_LDI(self):
         operand_a = self.ram[self.pc + 1]
         operand_b = self.ram[self.pc + 2]
         if self.debug:
-            print(f"Storing {operand_b} at register[{operand_a}]")
+            print(f"LDI: Storing {operand_b} at register[{operand_a}]")
         self.register[operand_a] = operand_b
 
     def handle_PRN(self):
         operand = self.ram[self.pc + 1]
         if self.debug:
-            print(f"Printing from register[{operand}]")
+            print(f"PRN: Printing from register[{operand}]")
         print(self.register[operand])
 
     def handle_PUSH(self):
@@ -249,7 +281,7 @@ class CPU:
         self.ram[self.register[self.SP]] = operand
         if self.debug:
             print(
-                f"Storing {operand} from register[{self.ram[self.pc + 1]}] at Stack[{0xf4 - self.register[self.SP] - 1}]->ram[{self.register[self.SP] }]"
+                f"PUSH: Storing {operand} from register[{self.ram[self.pc + 1]}] at Stack[{0xf4 - self.register[self.SP] - 1}]->ram[{self.register[self.SP] }]"
             )
 
     def handle_POP(self):
@@ -257,12 +289,62 @@ class CPU:
         self.register[self.ram[self.pc + 1]] = operand
         if self.debug:
             print(
-                f"Popped {operand} from Stack[{0xf4 - self.register[self.SP] - 1}]->ram[{self.register[self.SP]}], storing in register[{self.ram[self.pc+1]}]"
+                f"POP: Popped {operand} from Stack[{0xf4 - self.register[self.SP] - 1}]->ram[{self.register[self.SP]}], storing in register[{self.ram[self.pc+1]}]"
             )
         self.register[self.SP] += 1
 
+    # PC MUTATORS
     def handle_CALL(self):
         self.register[self.SP] -= 1
         self.ram[self.register[self.SP]] = self.pc + 2
+        if self.debug:
+            print(
+                f"CALL: Storing {self.pc + 2} on Stack[{0xf4 - self.register[self.SP] - 1}]->ram[{self.register[self.SP]}] to return to"
+            )
         reg = self.ram[self.pc + 1]
         self.pc = self.register[reg]
+        if self.debug:
+            print(f"CALL: Calling subroutine {self.register[reg]} stored at register[{reg}]")
+
+    def handle_RET(self):
+        self.pc = self.ram[self.register[self.SP]]
+        if self.debug:
+            print(f"RET: Returning to {self.ram[self.register[self.SP]]}")
+        self.register[self.SP] += 1
+
+    def handle_JEQ(self):
+        oldPC = self.pc
+        if self.flags & 0b00000001 > 0:
+            self.pc = self.register[self.ram[self.pc + 1]]
+        else:
+            self.pc += 2
+        if self.debug:
+            print(f'JEQ: Equal flag set to {self.flags & 0b00000001 > 0}, pc moves from {oldPC} to {self.pc}')
+            
+    def handle_LD(self):
+        operand_a = self.ram[self.pc + 1]
+        operand_b = self.ram[self.pc + 2]
+        self.register[operand_a] = self.ram[self.register[operand_b]]
+        if self.debug:
+            print(f"LD: storing {self.ram[self.register[operand_b]]} from ram[{self.register[operand_b]}] in register{[operand_a]}")
+            
+    def handle_PRA(self):
+        operand_a = self.ram[self.pc + 1]
+        if self.debug:
+            print(f"PRA: printing ///{chr(self.register[operand_a])}/// from register[{operand_a}]")
+        print(f"{chr(self.register[operand_a])}")
+        
+    def handle_JMP(self):
+        oldPC = self.pc
+        operand_a = self.ram[self.pc + 1]
+        self.pc = self.register[operand_a]
+        if self.debug:
+            print(f"JMP: jumping to {self.register[operand_a]} from {oldPC}")
+    def handle_JNE(self):
+        oldPC = self.pc
+        if self.flags & 0b00000001 == 0:
+            self.pc = self.register[self.ram[self.pc + 1]]
+        else:
+            self.pc += 2
+        if self.debug:
+            print(f'JNE: Equal flag set to {self.flags & 0b00000001 > 0}, pc moves from {oldPC} to {self.pc}')
