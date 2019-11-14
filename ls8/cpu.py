@@ -233,6 +233,7 @@ class CPU:
             is_pc_mutator = (command >> 4) & 0b0001
             instruction_length = command >> 6
             if self.debug:
+                print("------------------------------------")
                 print(
                     f"RUN: {command}, isALU: {is_alu_command > 0}, isMutator: {is_pc_mutator > 0}"
                 )
